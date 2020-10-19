@@ -24,12 +24,9 @@ _encoder = json.JSONEncoder(ensure_ascii=False, separators=(",", ":"))
 
 
 class TerseJsonFormatter:
-    # TODO
-    def __init__(self, *args):
-        self.include_time = True
-        self.metadata = {}
-
-    def _init(self, include_time: bool = True, metadata: Optional[dict] = None):
+    def __init__(
+        self, *args, include_time: bool = True, metadata: Optional[dict] = None
+    ):
         self.include_time = include_time
         self.metadata = metadata or {}
 
@@ -49,4 +46,4 @@ class TerseJsonFormatter:
         # Add the metadata information to the event (e.g. the server_name).
         event.update(self.metadata)
 
-        return _encoder.encode(event) + "\n"
+        return _encoder.encode(event)

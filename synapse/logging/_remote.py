@@ -19,7 +19,7 @@ import traceback
 from collections import deque
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from math import floor
-from typing import Callable, Deque, Optional
+from typing import Deque, Optional
 
 import attr
 from zope.interface import implementer
@@ -44,34 +44,40 @@ class LogProducer:
     is resumed.
 
     Args:
-        buffer: Log buffer to read logs from.
         transport: Transport to write to.
-        formatter: A callable to format the log record to a string.
+        handler: The RemoteHandler instance to operate over.
     """
 
     transport = attr.ib(type=ITransport)
-    formatter = attr.ib(type=Callable[[logging.LogRecord], str])
-    _buffer = attr.ib(type=deque)
-    _paused = attr.ib(default=False, type=bool, init=False)
+    _handler = attr.ib(type="RemoteHandler")
+    _paused = attr.ib(default=True, type=bool, init=False)
 
     def pauseProducing(self):
         self._paused = True
 
     def stopProducing(self):
         self._paused = True
-        self._buffer = deque()
+        self._handler = None
 
     def resumeProducing(self):
+        # If we're already producing, nothing to do.
+        if not self._paused:
+            return
+
         self._paused = False
 
-        while self._paused is False and (self._buffer and self.transport.connected):
+        # Loop until paused.
+        while self._paused is False and (
+            self._handler._buffer and self.transport.connected
+        ):
             try:
                 # Request the next record and format it.
-                record = self._buffer.popleft()
-                msg = self.formatter(record)
+                record = self._handler._buffer.popleft()
+                msg = self._handler.format(record)
 
                 # Send it as a new line over the transport.
                 self.transport.write(msg.encode("utf8"))
+                self.transport.write(b"\n")
             except Exception:
                 # Something has gone wrong writing to the transport -- log it
                 # and break out of the while.
@@ -90,7 +96,12 @@ class RemoteHandler(logging.Handler):
     """
 
     def __init__(
-        self, host: str, port: int, maximum_buffer: int = 1000, level=logging.NOTSET
+        self,
+        host: str,
+        port: int,
+        maximum_buffer: int = 1000,
+        level=logging.NOTSET,
+        reactor=None,
     ):
         super().__init__(level=level)
         self.host = host
@@ -103,7 +114,8 @@ class RemoteHandler(logging.Handler):
         self._producer = None  # type: Optional[LogProducer]
 
         # Connect without DNS lookups if it's a direct IP.
-        from twisted.internet import reactor
+        if reactor is None:
+            from twisted.internet import reactor
 
         try:
             ip = ip_address(self.host)
@@ -128,6 +140,7 @@ class RemoteHandler(logging.Handler):
         """
         Triggers an attempt to connect then write to the remote if not already writing.
         """
+        # Do not attempt to open multiple connections.
         if self._connection_waiter:
             return
 
@@ -153,9 +166,7 @@ class RemoteHandler(logging.Handler):
                 self._producer.stopProducing()
 
             # Make a new producer and start it.
-            self._producer = LogProducer(
-                buffer=self._buffer, transport=r.transport, formatter=self.format,
-            )
+            self._producer = LogProducer(handler=self, transport=r.transport)
             r.transport.registerProducer(self._producer, True)
             self._producer.resumeProducing()
             self._connection_waiter = None
@@ -174,7 +185,7 @@ class RemoteHandler(logging.Handler):
 
         # Strip out DEBUGs
         self._buffer = deque(
-            filter(lambda record: record.levelno <= logging.DEBUG, self._buffer)
+            filter(lambda record: record.levelno > logging.DEBUG, self._buffer)
         )
 
         if len(self._buffer) <= self.maximum_buffer:
@@ -182,7 +193,7 @@ class RemoteHandler(logging.Handler):
 
         # Strip out INFOs
         self._buffer = deque(
-            filter(lambda record: record.levelno <= logging.INFO, self._buffer)
+            filter(lambda record: record.levelno > logging.INFO, self._buffer)
         )
 
         if len(self._buffer) <= self.maximum_buffer:
