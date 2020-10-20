@@ -49,7 +49,7 @@ class LogProducer:
     """
 
     transport = attr.ib(type=ITransport)
-    _handler = attr.ib(type="RemoteHandler")
+    _handler = attr.ib(type="Optional[RemoteHandler]")
     _paused = attr.ib(default=True, type=bool, init=False)
 
     def pauseProducing(self):
@@ -62,6 +62,9 @@ class LogProducer:
     def resumeProducing(self):
         # If we're already producing, nothing to do.
         self._paused = False
+
+        # _handler should always be set while this is resumed.
+        assert self._handler
 
         # Loop until paused.
         while self._paused is False and (
@@ -84,7 +87,7 @@ class LogProducer:
 
 class RemoteHandler(logging.Handler):
     """
-    An IObserver that writes JSON logs to a TCP target.
+    An logging handler that writes logs to a TCP target.
 
     Args:
         host: The host of the logging target.
@@ -98,7 +101,7 @@ class RemoteHandler(logging.Handler):
         port: int,
         maximum_buffer: int = 1000,
         level=logging.NOTSET,
-        reactor=None,
+        _reactor=None,
     ):
         super().__init__(level=level)
         self.host = host
@@ -111,22 +114,24 @@ class RemoteHandler(logging.Handler):
         self._producer = None  # type: Optional[LogProducer]
 
         # Connect without DNS lookups if it's a direct IP.
-        if reactor is None:
+        if _reactor is None:
             from twisted.internet import reactor
+
+            _reactor = reactor
 
         try:
             ip = ip_address(self.host)
             if isinstance(ip, IPv4Address):
-                endpoint = TCP4ClientEndpoint(reactor, self.host, self.port)
+                endpoint = TCP4ClientEndpoint(_reactor, self.host, self.port)
             elif isinstance(ip, IPv6Address):
-                endpoint = TCP6ClientEndpoint(reactor, self.host, self.port)
+                endpoint = TCP6ClientEndpoint(_reactor, self.host, self.port)
             else:
                 raise ValueError("Unknown IP address provided: %s" % (self.host,))
         except ValueError:
             endpoint = HostnameEndpoint(reactor, self.host, self.port)
 
         factory = Factory.forProtocol(Protocol)
-        self._service = ClientService(endpoint, factory, clock=reactor)
+        self._service = ClientService(endpoint, factory, clock=_reactor)
         self._service.startService()
         self._connect()
 

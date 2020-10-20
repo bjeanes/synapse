@@ -53,9 +53,9 @@ class RemoteHandlerTestCase(StructuredLoggingTestBase, HomeserverTestCase):
     @DEBUG
     def test_log_output(self):
         """
-        The Terse JSON outputter delivers simplified structured logs over TCP.
+        The remote handler delivers logs over TCP.
         """
-        handler = RemoteHandler("127.0.0.1", 9000, reactor=self.reactor)
+        handler = RemoteHandler("127.0.0.1", 9000, _reactor=self.reactor)
         logger = logging.getLogger()
         logger.addHandler(handler)
 
@@ -81,7 +81,7 @@ class RemoteHandlerTestCase(StructuredLoggingTestBase, HomeserverTestCase):
         When backpressure is hit, DEBUG logs will be shed.
         """
         handler = RemoteHandler(
-            "127.0.0.1", 9000, maximum_buffer=10, reactor=self.reactor
+            "127.0.0.1", 9000, maximum_buffer=10, _reactor=self.reactor
         )
         logger = logging.getLogger()
         logger.addHandler(handler)
@@ -112,7 +112,7 @@ class RemoteHandlerTestCase(StructuredLoggingTestBase, HomeserverTestCase):
         When backpressure is hit, DEBUG and INFO logs will be shed.
         """
         handler = RemoteHandler(
-            "127.0.0.1", 9000, maximum_buffer=10, reactor=self.reactor
+            "127.0.0.1", 9000, maximum_buffer=10, _reactor=self.reactor
         )
         logger = logging.getLogger()
         logger.addHandler(handler)
@@ -149,7 +149,7 @@ class RemoteHandlerTestCase(StructuredLoggingTestBase, HomeserverTestCase):
         it will cut the middle messages out.
         """
         handler = RemoteHandler(
-            "127.0.0.1", 9000, maximum_buffer=10, reactor=self.reactor
+            "127.0.0.1", 9000, maximum_buffer=10, _reactor=self.reactor
         )
         logger = logging.getLogger()
         logger.addHandler(handler)
