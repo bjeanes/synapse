@@ -14,15 +14,12 @@
 # limitations under the License.
 import logging
 
+from twisted.test.proto_helpers import AccumulatingProtocol
+
 from synapse.logging import RemoteHandler
 
-from tests.server import connect_client
+from tests.server import FakeTransport
 from tests.unittest import DEBUG, HomeserverTestCase
-
-
-class FakeBeginner:
-    def beginLoggingTo(self, observers, **kwargs):
-        self.observers = observers
 
 
 class StructuredLoggingTestBase:
@@ -38,6 +35,20 @@ class StructuredLoggingTestBase:
         self.addCleanup(_cleanup)
 
 
+def connect_logging_client(reactor, client_id):
+    # This is essentially tests.server.connect_client, but disabling autoflush on
+    # the client transport. This is necessary to avoid an infinite loop due to
+    # sending of data via the logging transport causing additional logs to be
+    # written.
+    factory = reactor.tcpClients.pop(client_id)[2]
+    client = factory.buildProtocol(None)
+    server = AccumulatingProtocol()
+    server.makeConnection(FakeTransport(client, reactor))
+    client.makeConnection(FakeTransport(server, reactor, autoflush=False))
+
+    return client, server
+
+
 class RemoteHandlerTestCase(StructuredLoggingTestBase, HomeserverTestCase):
     @DEBUG
     def test_log_output(self):
@@ -51,12 +62,10 @@ class RemoteHandlerTestCase(StructuredLoggingTestBase, HomeserverTestCase):
         logger.info("Hello there, %s!", "wally")
 
         # Trigger the connection
-        self.pump()
-
-        _, server = connect_client(self.reactor, 0)
+        client, server = connect_logging_client(self.reactor, 0)
 
         # Trigger data being sent
-        self.pump()
+        client.transport.flush()
 
         # One log message, with a single trailing newline
         logs = server.data.decode("utf8").splitlines()
@@ -89,8 +98,8 @@ class RemoteHandlerTestCase(StructuredLoggingTestBase, HomeserverTestCase):
         logger.debug("too much debug")
 
         # Allow the reconnection
-        _, server = connect_client(self.reactor, 0)
-        self.pump()
+        client, server = connect_logging_client(self.reactor, 0)
+        client.transport.flush()
 
         # Only the 7 infos made it through, the debugs were elided
         logs = server.data.splitlines()
@@ -124,8 +133,8 @@ class RemoteHandlerTestCase(StructuredLoggingTestBase, HomeserverTestCase):
         logger.debug("too much debug")
 
         # Allow the reconnection
-        _, server = connect_client(self.reactor, 0)
-        self.pump()
+        client, server = connect_logging_client(self.reactor, 0)
+        client.transport.flush()
 
         # The 10 warnings made it through, the debugs and infos were elided
         logs = server.data.splitlines()
@@ -150,8 +159,8 @@ class RemoteHandlerTestCase(StructuredLoggingTestBase, HomeserverTestCase):
             logger.warning("warn %s" % (i,))
 
         # Allow the reconnection
-        _, server = connect_client(self.reactor, 0)
-        self.pump()
+        client, server = connect_logging_client(self.reactor, 0)
+        client.transport.flush()
 
         # The first five and last five warnings made it through, the debugs and
         # infos were elided

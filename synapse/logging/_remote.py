@@ -61,9 +61,6 @@ class LogProducer:
 
     def resumeProducing(self):
         # If we're already producing, nothing to do.
-        if not self._paused:
-            return
-
         self._paused = False
 
         # Loop until paused.
